@@ -22,13 +22,15 @@ def bucket_get():
     results = []
     for pool in pools:
         results.append(pool)
-    return jsonify({'result' = pool, 'meta' = {'status_code' = 200, 'message' = 'OK'}})
+    return jsonify({'result': pool, 'meta' = {'status_code': 200, 'message': 'OK'}})
 
 # create a new bucket
 @app.route('/<bucket_name>', methods=['PUT'])
 def bucket_create(bucket_name):
     cluster.create_pool(app.config['BUCKET_PREFIX'] + bucket_name)
-    return jsonify({'meta' = {'status_code' = 200, 'message' = 'OK'}})
+    return jsonify({'meta': {'status_code': 200, 'message': 'OK'}})
+
+cluster.connect()
 
 # Supaya ngga usah pake command `flask run`, tinggal `python client.py` aja.
 if __name__ == '__main__':
