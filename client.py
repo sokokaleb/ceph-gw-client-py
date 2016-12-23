@@ -22,7 +22,7 @@ def bucket_get():
     results = []
     for pool in pools:
         results.append(pool)
-    return jsonify({'result': pool, 'meta' = {'status_code': 200, 'message': 'OK'}})
+    return jsonify({'result': results, 'meta': {'status_code': 200, 'message': 'OK'}})
 
 # create a new bucket
 @app.route('/<bucket_name>', methods=['PUT'])
