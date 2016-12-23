@@ -6,3 +6,4 @@ Dependency:
 * `rados` from Ceph Librados installation.
 * `flask` from pypi.
 * `flask-dotenv` from pypi.
+* `uwsgi` from pypi.
