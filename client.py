@@ -1,5 +1,8 @@
 from flask import Flask
+from flask import jsonify
 from flask_dotenv import DotEnv
+import rados, sys
+
 app = Flask(__name__)
 env = DotEnv()
 env.init_app(app)
@@ -16,16 +19,16 @@ cluster = rados.Rados(conffile='/etc/ceph/ceph.conf', conf=dict(keyring='/etc/ce
 @app.route('/', methods=['GET'])
 def bucket_get():
     pools = cluster.list_pools()
-    results = ''
+    results = []
     for pool in pools:
-        results += pool
-    return jsonify('{result: pool, meta: {status_code: 200, message: "OK"}}')
+        results.append(pool)
+    return jsonify({'result' = pool, 'meta' = {'status_code' = 200, 'message' = 'OK'}})
 
 # create a new bucket
 @app.route('/<bucket_name>', methods=['PUT'])
 def bucket_create(bucket_name):
     cluster.create_pool(app.config['BUCKET_PREFIX'] + bucket_name)
-    return jsonify('{meta: {status_code: 200, message: "OK"}}')
+    return jsonify({'meta' = {'status_code' = 200, 'message' = 'OK'}})
 
 # Supaya ngga usah pake command `flask run`, tinggal `python client.py` aja.
 if __name__ == '__main__':
