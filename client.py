@@ -10,6 +10,23 @@ env.eval(keys={
 # Anthony please continue here below
 # Cek konten dari .env, cara pakenya tinggal app.config['KEY']
 
+cluster = rados.Rados(conffile='/etc/ceph/ceph.conf', conf=dict(keyring='/etc/ceph/ceph.client.admin.keyring'))
+
+# get list of buckets
+@app.route('/', methods=['GET'])
+def bucket_get():
+    pools = cluster.list_pools()
+    results = ''
+    for pool in pools:
+        results += pool
+    return jsonify('{result: pool, meta: {status_code: 200, message: "OK"}}')
+
+# create a new bucket
+@app.route('/<bucket_name>', methods=['PUT'])
+def bucket_create(bucket_name):
+    cluster.create_pool(app.config['BUCKET_PREFIX'] + bucket_name)
+    return jsonify('{meta: {status_code: 200, message: "OK"}}')
+
 # Supaya ngga usah pake command `flask run`, tinggal `python client.py` aja.
 if __name__ == '__main__':
     app.run(host='0.0.0.0',
