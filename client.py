@@ -1,6 +1,7 @@
 from flask import Flask
-from flask import jsonify, request, response
-from flask.ext.api import status
+from flask import jsonify
+from flask import request
+#from flask.ext.api import status
 from flask_dotenv import DotEnv
 from functools import wraps
 import rados, sys
@@ -44,28 +45,24 @@ def bucket_create(cluster, bucket_name):
 @app.route('/<bucket_name>', methods=['DELETE'])
 @append_cluster
 def bucket_delete(cluster, bucket_name):
-    # TODO: add an exception when there is no such bucket_name
     bucket_name = app.config['BUCKET_PREFIX'] + '-' + bucket_name
     if cluster.pool_exists(bucket_name):
-        cluster.delete_pool(app.config['BUCKET_PREFIX'] + '-' + bucket_name)
+        cluster.delete_pool(bucket_name)
         cluster.shutdown()
-        return status.HTTP_200_OK
+        return jsonify({'status': 'OK'})
     else:
         cluster.shutdown()
-        return "-1"
-    cluster.delete_pool(app.config['BUCKET_PREFIX'] + '-' + bucket_name)
-    cluster.shutdown()
-    return make_response() # jsonify({'meta': {'status_code': 200, 'message': 'OK'}})
+        return jsonify({'status': 'file not found'})
 
-def get_object_ref(cluster, bucket_name, object_name):
-    if cluster.pool_exists(bucket_name):
-        ioctx = cluster.open_ioctx(bucket_name)
-        try:
-            return ioctx.read(object_name)
-        except Error:
-            return None
-    else:
-        return None
+#def get_object_ref(cluster, bucket_name, object_name):
+#    if cluster.pool_exists(bucket_name):
+#        ioctx = cluster.open_ioctx(bucket_name)
+#        try:
+#            return ioctx.read(object_name)
+#        except Error:
+#            return None
+#    else:
+#        return None
 
 # add a new object to an existing cluster
 @app.route('/<bucket_name>/<object_name>', methods=['PUT'])
@@ -73,12 +70,15 @@ def get_object_ref(cluster, bucket_name, object_name):
 def object_put(cluster, bucket_name, object_name):
     bucket_name = app.config['BUCKET_PREFIX'] + '-' + bucket_name
     if cluster.pool_exists(bucket_name):
-        ioctx = cluster.open_ioctx(bucket_name)
-        # TODO: change to value in request payload
-        ioctx.write(object_name, request.form['content'])
-        ioctx.close()
-        cluster.shutdown()
-        return jsonify({'meta': {'status_code': 200, 'message': 'OK'}})
+    try:
+            ioctx = cluster.open_ioctx(bucket_name)
+            ioctx.write_full(object_name, str(request.form['content'])) #'test here') #request.form['content'])
+            ioctx.close()
+            cluster.shutdown()
+            return jsonify({'meta': {'status_code': 200, 'message': 'OK', 'file': request.form['content']}})
+        except Error:
+            cluster.shutdown()
+            return jsonify({'test': request.form['content']})
     else:
         cluster.shutdown()
         return jsonify({'meta': {'status_code': 200, 'message': 'OK'}})
@@ -93,7 +93,7 @@ def object_get(cluster, bucket_name, object_name):
         result = ioctx.read(object_name)
         ioctx.close()
         cluster.shutdown()
-        return result, status.HTTP_200_OK
+        return jsonify(result)
     else:
         cluster.shutdown()
         return "Resource not available", status.HTTP_404_NOT_FOUND
@@ -106,12 +106,15 @@ def object_delete(cluster, bucket_name, object_name):
     if cluster.pool_exists(bucket_name):
         ioctx = cluster.open_ioctx(bucket_name)
         try:
+           # return jsonify({'file': object_name})
             ioctx.remove_object(object_name)
-            return "OK, removed", status.HTTP_200_OK
+            ioctx.close()
+            return jsonify({'status': 'OK'})
         except Error:
-            return "Error resource not available", status.HTTP_404_NOT_FOUND
+            ioctx.close()
+            return jsonify({'status': 'not available'})
     else:
-        return "Error resource not available", status.HTTP_404_NOT_FOUND
+        return jsonify({'not available (bucket)'})
 
 # list all objects in a specific bucket
 @app.route('/<bucket_name>', methods=['GET'])
