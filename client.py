@@ -1,5 +1,6 @@
 from flask import Flask
 from flask import jsonify
+from flask import make_response
 from flask import request
 from flask_dotenv import DotEnv
 from functools import wraps
@@ -58,15 +59,18 @@ def bucket_delete(cluster, bucket_name):
         cluster.shutdown()
         return ('bucket ' + bucket_name + ' not found', 404)
 
-#def get_object_ref(cluster, bucket_name, object_name):
-#    if cluster.pool_exists(bucket_name):
-#        ioctx = cluster.open_ioctx(bucket_name)
-#        try:
-#            return ioctx.read(object_name)
-#        except Error:
-#            return None
-#    else:
-#        return None
+# helper function to get an object
+def get_object_ref(cluster, bucket_name, object_name):
+    if cluster.pool_exists(bucket_name):
+        try:
+            ioctx = cluster.open_ioctx(bucket_name)
+            result = ioctx.read(object_name)
+            ioctx.close()
+            return result
+        except Exception:
+            return None
+    else:
+        return None
 
 # add a new object to an existing cluster
 @app.route('/<bucket_name>/<object_name>', methods=['PUT'])
@@ -74,13 +78,13 @@ def bucket_delete(cluster, bucket_name):
 def object_put(cluster, bucket_name, object_name):
     bucket_name = app.config['BUCKET_PREFIX'] + '-' + bucket_name
     if cluster.pool_exists(bucket_name):
-    try:
+        try:
             ioctx = cluster.open_ioctx(bucket_name)
             ioctx.write_full(object_name, str(request.form['content']))
             ioctx.close()
             cluster.shutdown()
             return ('created new object ' + bucket_name + '/' + object_name, 200)
-        except Error:
+        except Exception:
             cluster.shutdown()
             return ('error writing object', 406)
     else:
@@ -114,12 +118,35 @@ def object_delete(cluster, bucket_name, object_name):
             ioctx.close()
             cluster.shutdown()
             return ('', 200)
-        except Error:
+        except Exception:
             ioctx.close()
             cluster.shutdown()
             return ('object ' + object_name + ' not found', 404)
     else:
         return ('bucket ' + bucket_name + ' not found', 404)
+
+# copy an object
+@app.route('/<source_bucket>/<source_object>/<dest_bucket>/<dest_object>', methods=['COPY'])
+@append_cluster
+def object_copy(cluster, source_bucket, source_object, dest_bucket, dest_object):
+    source_bucket = app.config['BUCKET_PREFIX'] + '-' + source_bucket
+    dest_bucket = app.config['BUCKET_PREFIX'] + '-' + dest_bucket
+    source_object_ref = get_object_ref(cluster, source_bucket, source_object)
+    dest_object_ref = get_object_ref(cluster, dest_bucket, dest_object)
+    if source_object_ref is None:
+        cluster.shutdown()
+        return ('source object not found', 404)
+    if dest_object_ref is not None:
+        cluster.shutdown()
+        return ('target exist', 409)
+    if not cluster.pool_exists(dest_bucket):
+        cluster.shutdown()
+        return ('destination bucket not found', 404)
+    ioctx = cluster.open_ioctx(dest_bucket)
+    ioctx.write_full(dest_object, source_object_ref)
+    ioctx.close()
+    cluster.shutdown()
+    return ('copied', 200)
 
 # list all objects in a specific bucket
 @app.route('/<bucket_name>', methods=['GET'])
