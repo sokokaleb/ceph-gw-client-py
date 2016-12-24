@@ -47,7 +47,7 @@ def bucket_list(bucket_name):
             results.append(rados_object)
         except StopIteration:
             break
-    return jsonify({'result': results, 'meta': {'status_code' 200, 'message': 'OK'}})
+    return jsonify({'result': results, 'meta': {'status_code': 200, 'message': 'OK'}})
 
 cluster.connect()
 
