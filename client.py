@@ -60,13 +60,12 @@ def bucket_delete(cluster, bucket_name):
         return ('bucket ' + bucket_name + ' not found', 404)
 
 # helper function to get an object
-def get_object_ref(cluster, bucket_name, object_name):
+def get_object_content(cluster, bucket_name, object_name):
     if cluster.pool_exists(bucket_name):
         try:
             ioctx = cluster.open_ioctx(bucket_name)
-            result = ioctx.read(object_name)
-            ioctx.close()
-            return result
+            size, _ = ioctx.stat(object_name)
+            return ioctx.read(object_name, size)
         except Exception:
             return None
     else:
@@ -80,7 +79,7 @@ def object_put(cluster, bucket_name, object_name):
     if cluster.pool_exists(bucket_name):
         try:
             ioctx = cluster.open_ioctx(bucket_name)
-            ioctx.write_full(object_name, str(request.form['content']))
+            ioctx.write_full(object_name, request.data)
             ioctx.close()
             cluster.shutdown()
             return ('created new object ' + bucket_name + '/' + object_name, 200)
@@ -98,10 +97,11 @@ def object_get(cluster, bucket_name, object_name):
     bucket_name = app.config['BUCKET_PREFIX'] + '-' + bucket_name
     if cluster.pool_exists(bucket_name):
         ioctx = cluster.open_ioctx(bucket_name)
-        result = ioctx.read(object_name)
+        size, _ = ioctx.stat(object_name)
+        result = ioctx.read(object_name, size)
         ioctx.close()
         cluster.shutdown()
-        return (jsonify(result), 200)
+        return (result, 200, {'Content-Disposition': 'attachment; filename=%s' % object_name})
     else:
         cluster.shutdown()
         return ('bucket ' + bucket_name + ' not found', 404)
@@ -131,8 +131,8 @@ def object_delete(cluster, bucket_name, object_name):
 def object_copy(cluster, source_bucket, source_object, dest_bucket, dest_object):
     source_bucket = app.config['BUCKET_PREFIX'] + '-' + source_bucket
     dest_bucket = app.config['BUCKET_PREFIX'] + '-' + dest_bucket
-    source_object_ref = get_object_ref(cluster, source_bucket, source_object)
-    dest_object_ref = get_object_ref(cluster, dest_bucket, dest_object)
+    source_object_ref = get_object_content(cluster, source_bucket, source_object)
+    dest_object_ref = get_object_content(cluster, dest_bucket, dest_object)
     if source_object_ref is None:
         cluster.shutdown()
         return ('source object not found', 404)
