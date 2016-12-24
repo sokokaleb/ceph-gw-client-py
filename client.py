@@ -1,6 +1,8 @@
 from flask import Flask
-from flask import jsonify
+from flask import jsonify, request, response
+from flask.ext.api import status
 from flask_dotenv import DotEnv
+from functools import wraps
 import rados, sys
 
 app = Flask(__name__)
@@ -13,7 +15,7 @@ env.eval(keys={
 def append_cluster(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        cluster = rados.Rados(conffile=app.config['CONF_FILE'], conf=dict(keyring=app.config['KEYRING']))
+        cluster = rados.Rados(conffile=app.config['CONFFILE_PATH'], conf=dict(keyring=app.config['KEYRING_PATH']))
         cluster.connect()
         return f(cluster=cluster, *args, **kwargs)
     return decorated_function
@@ -21,7 +23,7 @@ def append_cluster(f):
 # get list of buckets
 @app.route('/', methods=['GET'])
 @append_cluster
-def bucket_get():
+def bucket_get(cluster):
     pools = cluster.list_pools()
     cluster.shutdown()
     results = []
@@ -33,7 +35,7 @@ def bucket_get():
 # create a new bucket
 @app.route('/<bucket_name>', methods=['PUT'])
 @append_cluster
-def bucket_create(bucket_name):
+def bucket_create(cluster, bucket_name):
     cluster.create_pool(app.config['BUCKET_PREFIX'] + '-' + bucket_name)
     cluster.shutdown()
     return jsonify({'meta': {'status_code': 200, 'message': 'OK'}})
@@ -41,28 +43,80 @@ def bucket_create(bucket_name):
 # delete a specific bucket
 @app.route('/<bucket_name>', methods=['DELETE'])
 @append_cluster
-def bucket_delete(bucket_name):
+def bucket_delete(cluster, bucket_name):
     # TODO: add an exception when there is no such bucket_name
+    bucket_name = app.config['BUCKET_PREFIX'] + '-' + bucket_name
+    if cluster.pool_exists(bucket_name):
+        cluster.delete_pool(app.config['BUCKET_PREFIX'] + '-' + bucket_name)
+        cluster.shutdown()
+        return status.HTTP_200_OK
+    else:
+        cluster.shutdown()
+        return "-1"
     cluster.delete_pool(app.config['BUCKET_PREFIX'] + '-' + bucket_name)
     cluster.shutdown()
-    return jsonify({'meta': {'status_code': 200, 'message': 'OK'}})
+    return make_response() # jsonify({'meta': {'status_code': 200, 'message': 'OK'}})
+
+def get_object_ref(cluster, bucket_name, object_name):
+    if cluster.pool_exists(bucket_name):
+        ioctx = cluster.open_ioctx(bucket_name)
+        try:
+            return ioctx.read(object_name)
+        except Error:
+            return None
+    else:
+        return None
 
 # add a new object to an existing cluster
 @app.route('/<bucket_name>/<object_name>', methods=['PUT'])
 @append_cluster
-def object_put(bucket_name, object_name):
-    # TODO: add an exception when there is no such bucket_name
-    ioctx = cluster.open_ioctx(bucket_name)
-    # TODO: change to value in request payload
-    ioctx.write(object_name, 'temporary value')
-    ioctx.close()
-    cluster.shutdown()
-    return jsonify({'meta': {'status_code': 200, 'message': 'OK'}})
+def object_put(cluster, bucket_name, object_name):
+    bucket_name = app.config['BUCKET_PREFIX'] + '-' + bucket_name
+    if cluster.pool_exists(bucket_name):
+        ioctx = cluster.open_ioctx(bucket_name)
+        # TODO: change to value in request payload
+        ioctx.write(object_name, request.form['content'])
+        ioctx.close()
+        cluster.shutdown()
+        return jsonify({'meta': {'status_code': 200, 'message': 'OK'}})
+    else:
+        cluster.shutdown()
+        return jsonify({'meta': {'status_code': 200, 'message': 'OK'}})
+
+# get the content of an object
+@app.route('/<bucket_name>/<object_name>', methods=['GET'])
+@append_cluster
+def object_get(cluster, bucket_name, object_name):
+    bucket_name = app.config['BUCKET_PREFIX'] + '-' + bucket_name
+    if cluster.pool_exists(bucket_name):
+        ioctx = cluster.open_ioctx(bucket_name)
+        result = ioctx.read(object_name)
+        ioctx.close()
+        cluster.shutdown()
+        return result, status.HTTP_200_OK
+    else:
+        cluster.shutdown()
+        return "Resource not available", status.HTTP_404_NOT_FOUND
+
+# delete an object from a bucket
+@app.route('/<bucket_name>/<object_name>', methods=['DELETE'])
+@append_cluster
+def object_delete(cluster, bucket_name, object_name):
+    bucket_name = app.config['BUCKET_PREFIX'] + '-' + bucket_name
+    if cluster.pool_exists(bucket_name):
+        ioctx = cluster.open_ioctx(bucket_name)
+        try:
+            ioctx.remove_object(object_name)
+            return "OK, removed", status.HTTP_200_OK
+        except Error:
+            return "Error resource not available", status.HTTP_404_NOT_FOUND
+    else:
+        return "Error resource not available", status.HTTP_404_NOT_FOUND
 
 # list all objects in a specific bucket
 @app.route('/<bucket_name>', methods=['GET'])
 @append_cluster
-def bucket_list(bucket_name):
+def bucket_list(cluster, bucket_name):
     # TODO: add an exception when there is no such bucket_name
     ioctx = cluster.open_ioctx(app.config['BUCKET_PREFIX'] + '-' + bucket_name)
     object_iterator = ioctx.list_objects()
@@ -70,7 +124,7 @@ def bucket_list(bucket_name):
     while True:
         try:
             rados_object = object_iterator.next()
-            results.append(rados_object)
+            results.append(rados_object.key)
         except StopIteration:
             break
     ioctx.close()
