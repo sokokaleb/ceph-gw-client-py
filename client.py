@@ -35,8 +35,8 @@ def bucket_get(cluster):
     cluster.shutdown()
     results = []
     for pool in pools:
-        if app.config['BUCKET_PREFIX'] in pool:
-            results.append(pool)
+        if pool.startswith(app.config['BUCKET_PREFIX']):
+            results.append(pool[len(app.config['BUCKET_PREFIX']):])
     return jsonify(results), 200
 
 # create a new bucket
