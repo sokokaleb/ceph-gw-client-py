@@ -25,7 +25,7 @@ def append_cluster(f):
 
 # helper to get prefixed bucket name
 def get_bucket_name(bucket_name):
-    return '{}-{}'.format(app.config['BUCKET_PREFIX'], bucket_name)
+    return '{}{}'.format(app.config['BUCKET_PREFIX'], bucket_name)
 
 # get list of buckets
 @app.route('/', methods=['GET'])
